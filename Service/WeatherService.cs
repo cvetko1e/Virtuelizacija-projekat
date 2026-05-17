@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Configuration;
 using System.ServiceModel;
 using Common;
@@ -11,7 +11,6 @@ namespace Service
         private string currentSessionId;
         private bool sessionStarted;
         private double? previousSh;
-        private double? previousHI;
         private double shSum;
         private int sampleCount;
         private readonly WeatherStorage storage;
@@ -46,23 +45,57 @@ namespace Service
         {
             if (meta == null)
             {
-                throw new FaultException<ValidationFault>(new ValidationFault { Message = "Meta podaci ne postoje." });
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "Meta podaci ne postoje.",
+                    Field = "meta",
+                    Code = "MISSING_FIELD"
+                });
             }
 
             if (string.IsNullOrWhiteSpace(meta.SessionId))
             {
-                throw new FaultException<ValidationFault>(new ValidationFault { Message = "SessionId je obavezan." });
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "SessionId je obavezan.",
+                    Field = "SessionId",
+                    Code = "MISSING_FIELD"
+                });
             }
 
             if (meta.ExpectedSamples <= 0)
             {
-                throw new FaultException<ValidationFault>(new ValidationFault { Message = "ExpectedSamples mora biti > 0." });
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "ExpectedSamples mora biti > 0.",
+                    Field = "ExpectedSamples",
+                    Code = "OUT_OF_RANGE"
+                });
+            }
+
+            if (meta.HeaderFields == null || meta.HeaderFields.Length == 0)
+            {
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "HeaderFields mora sadrzati barem jedno polje.",
+                    Field = "HeaderFields",
+                    Code = "MISSING_FIELD"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(meta.SourceFile))
+            {
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "SourceFile je obavezan.",
+                    Field = "SourceFile",
+                    Code = "MISSING_FIELD"
+                });
             }
 
             currentSessionId = meta.SessionId;
             sessionStarted = true;
             previousSh = null;
-            previousHI = null;
             shSum = 0;
             sampleCount = 0;
 
@@ -82,18 +115,47 @@ namespace Service
         {
             if (!sessionStarted)
             {
-                throw new FaultException<ValidationFault>(new ValidationFault { Message = "Sesija nije pokrenuta." });
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "Sesija nije pokrenuta.",
+                    Field = "session",
+                    Code = "INVALID_STATE"
+                });
             }
 
+            // Provera formata podataka — da li je sample uopste validan objekat.
+            if (sample == null)
+            {
+                throw new FaultException<DataFormatFault>(new DataFormatFault
+                {
+                    Message = "Sample objekat je null.",
+                    Field = "sample",
+                    Code = "NULL_OBJECT"
+                });
+            }
+
+            // Validacija formata datuma.
+            if (sample.Date == DateTime.MinValue)
+            {
+                throw new FaultException<DataFormatFault>(new DataFormatFault
+                {
+                    Message = "Date nije parsiran ili je prazan.",
+                    Field = "Date",
+                    Code = "INVALID_FORMAT"
+                });
+            }
+
+            // Validacija opsega (business rules) — vraca NACK umesto izuzetka.
             string validationMessage;
-            if (!ValidateSample(sample, out validationMessage))
+            string validationField;
+            if (!ValidateSampleRange(sample, out validationMessage, out validationField))
             {
                 storage.WriteReject(sample, validationMessage);
                 return new TransferResponse
                 {
                     Success = false,
                     Message = "NACK: " + validationMessage,
-                    Status = TransferStatus.FAILED
+                    Status = TransferStatus.IN_PROGRESS
                 };
             }
 
@@ -102,35 +164,54 @@ namespace Service
             shSum += sample.Sh;
             RaiseSampleReceived(sample);
 
+            // --- Provera nagle promene specificne vlage (Δsh) ---
+            // Formula: Δsh = sh(t) - sh(t - Δt)
+            // Ako je |Δsh| > SH_threshold, podici dogadjaj.
             if (previousSh.HasValue)
             {
                 double deltaSh = analytics.CalculateDelta(sample.Sh, previousSh.Value);
                 if (Math.Abs(deltaSh) > shThreshold)
                 {
-                    RaiseWarning("SHSpike", deltaSh >= 0 ? "SH iznad ocekivanog." : "SH ispod ocekivanog.", sample.Sh, previousSh.Value, sample.Date);
+                    RaiseWarning(
+                        "SHSpike",
+                        string.Format("Nagla promena specificne vlage: |Δsh| = {0:F6} > prag {1:F6}.",
+                            Math.Abs(deltaSh), shThreshold),
+                        sample.Sh,
+                        previousSh.Value,
+                        sample.Date);
                 }
             }
 
+            // --- Provera odstupanja SH od running-mean proseka (±25%) ---
             double meanSh = analytics.CalculateRunningMean(shSum, sampleCount);
             double lowerBand = meanSh * (1.0 - outOfBandPercent / 100.0);
             double upperBand = meanSh * (1.0 + outOfBandPercent / 100.0);
             if (sample.Sh < lowerBand || sample.Sh > upperBand)
             {
-                RaiseWarning("OutOfBandWarning", "SH je van opsega u odnosu na running mean.", sample.Sh, meanSh, sample.Date);
+                RaiseWarning(
+                    "OutOfBandWarning",
+                    string.Format("SH ({0:F4}) je van opsega [{1:F4}, {2:F4}] u odnosu na running mean ({3:F4}).",
+                        sample.Sh, lowerBand, upperBand, meanSh),
+                    sample.Sh,
+                    meanSh,
+                    sample.Date);
             }
 
+            // --- Racunanje Heat Index-a i provera praga ---
+            // Ako je HI > HI_max_threshold, podici dogadjaj.
             double currentHi = analytics.CalculateHeatIndex(sample.T, sample.Rh);
-            if (previousHI.HasValue)
+            if (currentHi > hiMaxThreshold)
             {
-                double deltaHi = analytics.CalculateDelta(currentHi, previousHI.Value);
-                if (Math.Abs(deltaHi) > hiMaxThreshold)
-                {
-                    RaiseWarning("HISpike", "Heat Index skok je veci od dozvoljenog.", currentHi, previousHI.Value, sample.Date);
-                }
+                RaiseWarning(
+                    "HIExceeded",
+                    string.Format("Heat Index ({0:F2}) premašuje dozvoljeni prag ({1:F2}).",
+                        currentHi, hiMaxThreshold),
+                    currentHi,
+                    hiMaxThreshold,
+                    sample.Date);
             }
 
             previousSh = sample.Sh;
-            previousHI = currentHi;
 
             return new TransferResponse
             {
@@ -144,7 +225,12 @@ namespace Service
         {
             if (!sessionStarted)
             {
-                throw new FaultException<ValidationFault>(new ValidationFault { Message = "Sesija nije aktivna." });
+                throw new FaultException<ValidationFault>(new ValidationFault
+                {
+                    Message = "Sesija nije aktivna.",
+                    Field = "session",
+                    Code = "INVALID_STATE"
+                });
             }
 
             storage.CloseFiles();
@@ -160,33 +246,69 @@ namespace Service
             };
         }
 
-        private bool ValidateSample(WeatherSample sample, out string message)
+        /// <summary>
+        /// Validacija dozvoljenih opsega za svako polje uzorka.
+        /// Vraca false i postavlja poruku/polje ako validacija ne prolazi.
+        /// </summary>
+        private bool ValidateSampleRange(WeatherSample sample, out string message, out string field)
         {
-            if (sample == null)
-            {
-                message = "Sample je null.";
-                return false;
-            }
-
+            // Sh — specificna vlaznost mora biti > 0 (g/kg).
             if (sample.Sh <= 0)
             {
                 message = "Sh mora biti > 0.";
+                field = "Sh";
                 return false;
             }
 
+            // Rh — relativna vlaznost mora biti u opsegu [0, 100] %.
             if (sample.Rh < 0 || sample.Rh > 100)
             {
                 message = "Rh mora biti u opsegu 0-100.";
+                field = "Rh";
                 return false;
             }
 
+            // T — temperatura u Celzijusima, fizicki razuman opseg.
+            if (sample.T < -90 || sample.T > 60)
+            {
+                message = "T mora biti u opsegu [-90, 60] °C.";
+                field = "T";
+                return false;
+            }
+
+            // Tpot — potencijalna temperatura, razuman opseg.
+            if (sample.Tpot < -90 || sample.Tpot > 80)
+            {
+                message = "Tpot mora biti u opsegu [-90, 80] °C.";
+                field = "Tpot";
+                return false;
+            }
+
+            // Tdew — temperatura rosne tacke, ne sme premašiti T.
+            if (sample.Tdew < -90 || sample.Tdew > 60)
+            {
+                message = "Tdew mora biti u opsegu [-90, 60] °C.";
+                field = "Tdew";
+                return false;
+            }
+
+            if (sample.Tdew > sample.T)
+            {
+                message = "Tdew ne moze biti veci od T (temperatura rosne tacke <= temperatura vazduha).";
+                field = "Tdew";
+                return false;
+            }
+
+            // Datum — ne sme biti podrazumevana (prazna) vrednost.
             if (sample.Date == DateTime.MinValue)
             {
                 message = "Date nije validan.";
+                field = "Date";
                 return false;
             }
 
             message = string.Empty;
+            field = string.Empty;
             return true;
         }
 

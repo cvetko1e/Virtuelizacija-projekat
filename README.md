@@ -1,4 +1,4 @@
-﻿# Virtuelizacija procesa - WCF Template
+# Virtuelizacija procesa - WCF Template
 
 Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF servisa i dogadjajnog modela**
 
@@ -42,7 +42,8 @@ Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF serv
 
 ## Sta dopuniti kasnije
 
-- Preciznija formula za Heat Index prema materijalu.
-- Dodatna validacija i robustniji fault handling.
-- Bolje logovanje i test primeri CSV dataset-a.
-- Event pretplatnici i dodatna obrada warning-a.
+- ~~Preciznija formula za Heat Index prema materijalu.~~ ✅ Implementirano (Rothfusz regresija + NWS korekcije).
+- ~~Dodatna validacija i robustniji fault handling.~~ ✅ Implementirano (DataFormatFault/ValidationFault sa Field/Code, prosireni opsezi).
+- ~~Bolje logovanje i test primeri CSV dataset-a.~~ ✅ Implementirano (Logger klasa sa fajl+konzola izlazom, test_dataset.csv sa validnim/nevalidnim redovima).
+- ~~Event pretplatnici i dodatna obrada warning-a.~~ ✅ Implementirano (WeatherEventHandler sa pretplatom, klasifikacijom ozbiljnosti i sumarnim izvestajem).
+
