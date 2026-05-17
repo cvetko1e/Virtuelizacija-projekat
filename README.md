@@ -47,3 +47,31 @@ Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF serv
 - ~~Bolje logovanje i test primeri CSV dataset-a.~~ ✅ Implementirano (Logger klasa sa fajl+konzola izlazom, test_dataset.csv sa validnim/nevalidnim redovima).
 - ~~Event pretplatnici i dodatna obrada warning-a.~~ ✅ Implementirano (WeatherEventHandler sa pretplatom, klasifikacijom ozbiljnosti i sumarnim izvestajem).
 
+
+## Kontrolna tacka 1 - pokrivenost
+
+1. Skica sistema i pravila protokola
+   - Dokumentacija: Documentation/architecture.md
+   - Protokol: StartSession, PushSample, EndSession
+   - ACK/NACK i statusi: TransferResponse, TransferStatus
+
+2. WCF servis, konfiguracija i ugovori
+   - Common/IWeatherService.cs
+   - Common/WeatherSample.cs
+   - Service/App.config
+   - Client/App.config
+
+3. WCF operacije i validacija podataka
+   - Service/WeatherService.cs
+   - Common/DataFormatFault.cs
+   - Common/ValidationFault.cs
+
+4. Dispose pattern i upravljanje resursima
+   - Service/WeatherStorage.cs
+   - Client/CsvWeatherReader.cs
+
+5. Rad sa fajlovima i ucitavanje CSV-a na klijentu
+   - Client/CsvWeatherReader.cs
+   - Client/Program.cs
+   - ucitavanje prvih 113 validnih redova
+   - logovanje nevalidnih i viska redova
