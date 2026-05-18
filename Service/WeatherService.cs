@@ -276,10 +276,10 @@ namespace Service
                 return false;
             }
 
-            // Tpot — potencijalna temperatura, razuman opseg.
-            if (sample.Tpot < -90 || sample.Tpot > 80)
+            // Tpot — potencijalna temperatura, prema Kaggle opisu je u Kelvinima (K).
+            if (sample.Tpot < 0 || sample.Tpot > 400)
             {
-                message = "Tpot mora biti u opsegu [-90, 80] °C.";
+                message = "Tpot mora biti u razumnom opsegu za Kelvine (npr. [0, 400] K).";
                 field = "Tpot";
                 return false;
             }
