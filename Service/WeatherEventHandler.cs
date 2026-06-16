@@ -60,11 +60,16 @@ namespace Service
 
             logger.Info(string.Format("=== SESIJA POKRENUTA: {0} ===", e.SessionId));
             logger.Info(e.Message);
+            logger.Info("Prenos u toku...");
         }
 
         public void HandleSampleReceived(object sender, SampleEventArgs e)
         {
             samplesReceived++;
+            logger.Info(string.Format(
+                "Prenos u toku... primljen uzorak #{0} za sesiju {1}.",
+                samplesReceived,
+                e.SessionId));
 
             // Progres ispis svakih 10 uzoraka.
             if (samplesReceived % 10 == 0)
@@ -77,6 +82,7 @@ namespace Service
         {
             logger.Info(string.Format("=== SESIJA ZAVRSENA: {0} ===", e.SessionId));
             logger.Info(e.Message);
+            logger.Info("Zavrsen prenos.");
 
             PrintSessionSummary(e.SessionId);
         }

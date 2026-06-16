@@ -75,3 +75,16 @@ Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF serv
    - Client/Program.cs
    - ucitavanje prvih 113 validnih redova
    - logovanje nevalidnih i viska redova
+
+## Kontrolna tacka 2 - pokrivenost
+
+6. Snimanje i organizacija fajlova na serveru
+   - Service/WeatherStorage.cs
+   - StartSession pravi poseban folder sesije
+   - measurements_session.csv cuva prihvacena merenja
+   - rejects.csv cuva odbacena merenja sa razlogom
+
+7. Mrezni prenos i tokovi, sekvencijalni streaming
+   - Client/Program.cs salje uzorke jedan po jedan kroz for petlju
+   - Service/WeatherService.cs prima svaki uzorak kroz PushSample
+   - Service/WeatherEventHandler.cs ispisuje statuse "Prenos u toku..." i "Zavrsen prenos."
