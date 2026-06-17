@@ -331,22 +331,16 @@ namespace Service
 
         private static void ThrowDataFormatFault(string message, string field, string code)
         {
-            throw new FaultException<DataFormatFault>(new DataFormatFault
-            {
-                Message = message,
-                Field = field,
-                Code = code
-            });
+            throw new FaultException<DataFormatFault>(
+            new DataFormatFault { Message = message, Field = field, Code = code },
+            new FaultReason(message));
         }
 
         private static void ThrowValidationFault(string message, string field, string code)
         {
             throw new FaultException<ValidationFault>(new ValidationFault
-            {
-                Message = message,
-                Field = field,
-                Code = code
-            });
+            {Message = message, Field = field, Code = code},
+            new FaultReason(message));
         }
 
         private static double ParseSetting(string key, double fallback)
