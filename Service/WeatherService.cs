@@ -13,6 +13,7 @@ namespace Service
         private string currentSessionId;
         private bool sessionStarted;
         private double? previousSh;
+        private double? previousHi;
         private double shSum;
         private int sampleCount;
         private readonly WeatherStorage storage;
@@ -100,6 +101,7 @@ namespace Service
             currentSessionId = meta.SessionId;
             sessionStarted = true;
             previousSh = null;
+            previousHi = null;
             shSum = 0;
             sampleCount = 0;
 
@@ -157,13 +159,15 @@ namespace Service
                 double deltaSh = analytics.CalculateDelta(sample.Sh, previousSh.Value);
                 if (Math.Abs(deltaSh) > shThreshold)
                 {
+                    string direction = deltaSh > 0 ? "iznad" : "ispod";
                     RaiseWarning(
                         "SHSpike",
-                        string.Format("Nagla promena specificne vlage: |Δsh| = {0:F6} > prag {1:F6}.",
-                            Math.Abs(deltaSh), shThreshold),
+                        string.Format("Nagla promena specificne vlage: |Δsh| = {0:F6} > prag {1:F6} ({2} ocekivanog).",
+                            Math.Abs(deltaSh), shThreshold, direction),
                         sample.Sh,
                         previousSh.Value,
-                        sample.Date);
+                        sample.Date,
+                        direction);
                 }
             }
 
@@ -173,30 +177,39 @@ namespace Service
             double upperBand = meanSh * (1.0 + outOfBandPercent / 100.0);
             if (sample.Sh < lowerBand || sample.Sh > upperBand)
             {
+                string direction = sample.Sh > upperBand ? "iznad" : "ispod";
                 RaiseWarning(
                     "OutOfBandWarning",
-                    string.Format("SH ({0:F4}) je van opsega [{1:F4}, {2:F4}] u odnosu na running mean ({3:F4}).",
-                        sample.Sh, lowerBand, upperBand, meanSh),
+                    string.Format("SH ({0:F4}) je van opsega [{1:F4}, {2:F4}] u odnosu na running mean ({3:F4}) ({4} ocekivane vrednosti).",
+                        sample.Sh, lowerBand, upperBand, meanSh, direction),
                     sample.Sh,
                     meanSh,
-                    sample.Date);
+                    sample.Date,
+                    direction);
             }
 
-            // --- Racunanje Heat Index-a i provera praga ---
-            // Ako je HI > HI_max_threshold, podici dogadjaj.
+            // --- Racunanje Heat Index-a i provera nagle promene (ΔHI) ---
+            // Ako je |ΔHI| > HI_max_threshold, podici dogadjaj HISpike.
             double currentHi = analytics.CalculateHeatIndex(sample.T, sample.Rh);
-            if (currentHi > hiMaxThreshold)
+            if (previousHi.HasValue)
             {
-                RaiseWarning(
-                    "HIExceeded",
-                    string.Format("Heat Index ({0:F2}) premašuje dozvoljeni prag ({1:F2}).",
-                        currentHi, hiMaxThreshold),
-                    currentHi,
-                    hiMaxThreshold,
-                    sample.Date);
+                double deltaHi = analytics.CalculateDelta(currentHi, previousHi.Value);
+                if (Math.Abs(deltaHi) > hiMaxThreshold)
+                {
+                    string direction = deltaHi > 0 ? "iznad" : "ispod";
+                    RaiseWarning(
+                        "HISpike",
+                        string.Format("Nagla promena indeksa toplote: |ΔHI| = {0:F4} > prag {1:F4} ({2} ocekivanog).",
+                            Math.Abs(deltaHi), hiMaxThreshold, direction),
+                        currentHi,
+                        previousHi.Value,
+                        sample.Date,
+                        direction);
+                }
             }
 
             previousSh = sample.Sh;
+            previousHi = currentHi;
 
             return new TransferResponse
             {
@@ -372,7 +385,7 @@ namespace Service
             }
         }
 
-        private void RaiseWarning(string warningType, string message, double currentValue, double expectedValue, DateTime date)
+        private void RaiseWarning(string warningType, string message, double currentValue, double expectedValue, DateTime date, string direction)
         {
             if (OnWarningRaised != null)
             {
@@ -382,7 +395,8 @@ namespace Service
                     Message = message,
                     CurrentValue = currentValue,
                     ExpectedValue = expectedValue,
-                    Date = date
+                    Date = date,
+                    Direction = direction
                 });
             }
         }

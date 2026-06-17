@@ -106,22 +106,22 @@ namespace Service
 
             if (severity == "CRITICAL")
             {
-                string alert = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}: {2} (vrednost={3:F4}, ocekivano={4:F4})",
-                    e.Date, e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue);
+                string alert = string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}: {2} (vrednost={3:F4}, ocekivano={4:F4}, smer={5})",
+                    e.Date, e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue, e.Direction ?? "-");
                 criticalAlerts.Add(alert);
-                logger.Error(string.Format("KRITICNO UPOZORENJE [{0}]: {1} | Vrednost={2:F4} | Ocekivano={3:F4} | Datum={4:O}",
-                    e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue, e.Date));
+                logger.Error(string.Format("KRITICNO UPOZORENJE [{0}]: {1} | Vrednost={2:F4} | Ocekivano={3:F4} | Smer={4} | Datum={5:O}",
+                    e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue, e.Direction ?? "-", e.Date));
             }
             else
             {
-                logger.Warning(string.Format("Upozorenje [{0}]: {1} | Vrednost={2:F4} | Ocekivano={3:F4} | Datum={4:O}",
-                    e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue, e.Date));
+                logger.Warning(string.Format("Upozorenje [{0}]: {1} | Vrednost={2:F4} | Ocekivano={3:F4} | Smer={4} | Datum={5:O}",
+                    e.WarningType, e.Message, e.CurrentValue, e.ExpectedValue, e.Direction ?? "-", e.Date));
             }
         }
 
         /// <summary>
         /// Klasifikuje ozbiljnost upozorenja na osnovu tipa.
-        /// HIExceeded je CRITICAL jer utice na zdravlje ljudi.
+        /// HISpike je CRITICAL jer nagla promena indeksa toplote utice na zdravlje ljudi.
         /// SHSpike je WARNING jer ukazuje na naglu promenu.
         /// OutOfBandWarning je INFO jer je statisticko odstupanje.
         /// </summary>
@@ -129,7 +129,7 @@ namespace Service
         {
             switch (warningType)
             {
-                case "HIExceeded":
+                case "HISpike":
                     return "CRITICAL";
                 case "SHSpike":
                     return "WARNING";

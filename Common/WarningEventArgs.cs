@@ -9,5 +9,6 @@ namespace Common
         public double CurrentValue { get; set; }
         public double ExpectedValue { get; set; }
         public DateTime Date { get; set; }
+        public string Direction { get; set; }
     }
 }

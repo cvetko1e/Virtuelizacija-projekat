@@ -91,3 +91,18 @@ Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF serv
    - Client/Program.cs salje uzorke jedan po jedan kroz for petlju
    - Service/WeatherService.cs prima svaki uzorak kroz PushSample
    - Service/WeatherEventHandler.cs ispisuje statuse "Prenos u toku..." i "Zavrsen prenos."
+
+8. Delegati i dogadjaji
+   - Service/WeatherService.cs definise OnTransferStarted, OnSampleReceived, OnTransferCompleted, OnWarningRaised
+   - Service/WeatherEventHandler.cs se pretplacuje na dogadjaje i loguje (konzola + fajl)
+   - pragovi (HI_max_threshold, SH_threshold, OUT_OF_BAND_PERCENT) se citaju iz Service/App.config
+
+9. Analitika 1 - detekcija nagle promene specificne vlage (DSH)
+   - Service/WeatherService.cs racuna DSH = sh[n] - sh[n-1] preko WeatherAnalytics.CalculateDelta
+   - |DSH| > SH_threshold podize dogadjaj SHSpike sa smerom (ispod/iznad ocekivanog)
+   - paralelno se pratu tekuci prosek (running mean) i odstupanje ±OUT_OF_BAND_PERCENT%, sto podize OutOfBandWarning sa smerom
+
+10. Analitika 2 - detekcija naglih promena indeksa toplote (DHI)
+    - Service/WeatherAnalytics.cs racuna Heat Index (Rothfusz regresija + NWS korekcije)
+    - Service/WeatherService.cs racuna DHI = HI[n] - HI[n-1]
+    - |DHI| > HI_max_threshold podize dogadjaj HISpike sa smerom (ispod/iznad ocekivanog)
