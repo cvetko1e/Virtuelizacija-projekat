@@ -11,7 +11,9 @@ namespace Client
         private static void Main(string[] args)
         {
             string logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-            string logFile = Path.Combine(logDir, "client_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log");
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string logFile = Path.Combine(logDir, "client_" + timestamp + ".log");
+            string csvIssuesLogFile = Path.Combine(logDir, "csv_issues_" + timestamp + ".csv");
 
             using (Logger logger = new Logger("Client", logFile))
             {
@@ -31,7 +33,7 @@ namespace Client
                     List<WeatherSample> samples;
                     using (CsvWeatherReader reader = new CsvWeatherReader(logger))
                     {
-                        samples = reader.ReadFirstSamples(csvPath, 113);
+                        samples = reader.ReadFirstSamples(csvPath, 113, csvIssuesLogFile);
                     }
 
                     logger.Info(string.Format("Ucitano {0} uzoraka. Pokretanje sesije...", samples.Count));
@@ -54,16 +56,31 @@ namespace Client
 
                     for (int i = 0; i < samples.Count; i++)
                     {
-                        TransferResponse pushResponse = proxy.PushSample(samples[i]);
-
-                        if (pushResponse.Success)
+                        try
                         {
-                            ackCount++;
+                            TransferResponse pushResponse = proxy.PushSample(samples[i]);
+
+                            if (pushResponse.Success)
+                            {
+                                ackCount++;
+                            }
+                            else
+                            {
+                                nackCount++;
+                                logger.Warning(string.Format("PushSample #{0}: NACK | {1}", i + 1, pushResponse.Message));
+                            }
                         }
-                        else
+                        catch (FaultException<DataFormatFault> ex)
                         {
                             nackCount++;
-                            logger.Warning(string.Format("PushSample #{0}: NACK | {1}", i + 1, pushResponse.Message));
+                            logger.Warning(string.Format("PushSample #{0}: NACK/DataFormatFault [{1}] polje={2}: {3}",
+                                i + 1, ex.Detail.Code ?? "?", ex.Detail.Field ?? "?", ex.Detail.Message));
+                        }
+                        catch (FaultException<ValidationFault> ex)
+                        {
+                            nackCount++;
+                            logger.Warning(string.Format("PushSample #{0}: NACK/ValidationFault [{1}] polje={2}: {3}",
+                                i + 1, ex.Detail.Code ?? "?", ex.Detail.Field ?? "?", ex.Detail.Message));
                         }
 
                         // Ispis progresa svakih 10 uzoraka.

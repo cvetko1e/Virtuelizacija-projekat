@@ -16,16 +16,23 @@ namespace Client
             this.logger = logger;
         }
 
-        /// <summary>
-        /// Ucitava prvih <paramref name="count"/> validnih redova iz CSV fajla.
-        /// Nevalidne redove i redove viska (posle count validnih) prijavljuje u log.
-        /// </summary>
-        /// <param name="path">Putanja do CSV fajla.</param>
-        /// <param name="count">Maksimalan broj validnih uzoraka za ucitavanje (113).</param>
-        /// <returns>Lista parsiranih WeatherSample objekata.</returns>
         public List<WeatherSample> ReadFirstSamples(string path, int count)
         {
-            List<WeatherSample> samples = new List<WeatherSample>();
+            return ReadFirstSamples(path, count, "csv_issues.log");
+        }
+
+        /// <summary>
+        /// Ucitava ceo CSV dataset, izdvaja prvih <paramref name="count"/> validnih redova
+        /// i sve nevalidne/redove viska upisuje u poseban log.
+        /// </summary>
+        /// <param name="path">Putanja do CSV fajla.</param>
+        /// <param name="count">Maksimalan broj validnih uzoraka za slanje (113).</param>
+        /// <param name="issuesLogPath">Poseban log za nevalidne i visak redova.</param>
+        /// <returns>Lista prvih validnih WeatherSample objekata.</returns>
+        public List<WeatherSample> ReadFirstSamples(string path, int count, string issuesLogPath)
+        {
+            List<WeatherSample> allValidSamples = new List<WeatherSample>();
+            List<int> allValidLineNumbers = new List<int>();
             int totalLines = 0;
             int invalidLines = 0;
             int excessLines = 0;
@@ -39,8 +46,17 @@ namespace Client
                 throw new FileNotFoundException("CSV fajl nije pronadjen.", path);
             }
 
-            using (StreamReader reader = new StreamReader(path))
+            string issuesDirectory = Path.GetDirectoryName(issuesLogPath);
+            if (!string.IsNullOrEmpty(issuesDirectory))
             {
+                Directory.CreateDirectory(issuesDirectory);
+            }
+
+            using (StreamReader reader = new StreamReader(path))
+            using (StreamWriter issuesWriter = new StreamWriter(issuesLogPath, false))
+            {
+                issuesWriter.WriteLine("LineNumber,Issue,RawLine,Reason");
+
                 string line;
                 bool firstLine = true;
 
@@ -70,35 +86,41 @@ namespace Client
                         logger.Warning(string.Format(
                             "Nevalidan red #{0}: \"{1}\" | Razlog: {2}",
                             totalLines, TruncateLine(line, 80), ex.Message));
+                        WriteIssue(issuesWriter, totalLines, "INVALID", line, ex.Message);
                         continue;
                     }
 
-                    // Proveriti da li smo dostigli limit validnih uzoraka.
-                    if (samples.Count >= count)
-                    {
-                        excessLines++;
-                        if (excessLines <= 5)
-                        {
-                            logger.Info(string.Format(
-                                "Red viska #{0} (posle {1} validnih): T={2:F2}, Date={3:O}",
-                                totalLines, count, sample.T, sample.Date));
-                        }
-                        continue;
-                    }
+                    allValidSamples.Add(sample);
+                    allValidLineNumbers.Add(totalLines);
+                }
 
-                    if (sample != null)
+                for (int i = count; i < allValidSamples.Count; i++)
+                {
+                    excessLines++;
+                    WeatherSample sample = allValidSamples[i];
+                    string formattedSample = FormatSample(sample);
+                    WriteIssue(issuesWriter, allValidLineNumbers[i], "EXCESS", formattedSample, "Red posle prvih " + count + " validnih uzoraka.");
+
+                    if (excessLines <= 5)
                     {
-                        samples.Add(sample);
+                        logger.Info(string.Format(
+                            "Red viska #{0} (posle {1} validnih): T={2:F2}, Date={3:O}",
+                            i + 1, count, sample.T, sample.Date));
                     }
                 }
             }
+
+            int returnedCount = Math.Min(count, allValidSamples.Count);
+            List<WeatherSample> samples = allValidSamples.GetRange(0, returnedCount);
 
             // Sumarni izvestaj ucitavanja.
             logger.Info("--- Izvestaj ucitavanja CSV-a ---");
             logger.Info(string.Format("  Ukupno redova u fajlu: {0}", totalLines));
             logger.Info(string.Format("  Validnih ucitanih:     {0}", samples.Count));
+            logger.Info(string.Format("  Validnih u datasetu:   {0}", allValidSamples.Count));
             logger.Info(string.Format("  Nevalidnih redova:     {0}", invalidLines));
             logger.Info(string.Format("  Redova viska:          {0}", excessLines));
+            logger.Info(string.Format("  Izdvojeni CSV log:     {0}", issuesLogPath));
             if (excessLines > 5)
             {
                 logger.Info(string.Format("  (prikazano prvih 5 redova viska, preostalih {0} izostavljeno)", excessLines - 5));
@@ -106,6 +128,45 @@ namespace Client
             logger.Info("---------------------------------");
 
             return samples;
+        }
+
+        private void WriteIssue(StreamWriter writer, int lineNumber, string issue, string rawLine, string reason)
+        {
+            writer.WriteLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "{0},{1},{2},{3}",
+                lineNumber,
+                EscapeCsv(issue),
+                EscapeCsv(rawLine),
+                EscapeCsv(reason)));
+        }
+
+        private string FormatSample(WeatherSample sample)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0},{1},{2},{3},{4},{5:O}",
+                sample.T,
+                sample.Tpot,
+                sample.Tdew,
+                sample.Sh,
+                sample.Rh,
+                sample.Date);
+        }
+
+        private string EscapeCsv(string value)
+        {
+            if (value == null)
+            {
+                return string.Empty;
+            }
+
+            if (value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0)
+            {
+                return value;
+            }
+
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
         }
 
         /// <summary>

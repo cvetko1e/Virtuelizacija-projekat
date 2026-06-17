@@ -65,16 +65,19 @@ Tema: **Simulacija i razmena podataka meteorološke stanice koriscenjem WCF serv
    - Service/WeatherService.cs
    - Common/DataFormatFault.cs
    - Common/ValidationFault.cs
+   - meta-zaglavlje se proverava kao tacan niz: T,Tpot,Tdew,Sh,Rh,Date
+   - format greske bacaju DataFormatFault, a opsezi/jedinice ValidationFault
 
 4. Dispose pattern i upravljanje resursima
    - Service/WeatherStorage.cs
    - Client/CsvWeatherReader.cs
+   - simulacija prekida prenosa: Service.exe --simulate-dispose
 
 5. Rad sa fajlovima i ucitavanje CSV-a na klijentu
    - Client/CsvWeatherReader.cs
    - Client/Program.cs
    - ucitavanje prvih 113 validnih redova
-   - logovanje nevalidnih i viska redova
+   - ceo dataset se procita, a nevalidni i visak redovi idu u izdvojeni csv_issues_*.csv log
 
 ## Kontrolna tacka 2 - pokrivenost
 

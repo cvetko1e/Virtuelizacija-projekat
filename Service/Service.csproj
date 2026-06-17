@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="ResourceDisposalSimulation.cs" />
     <Compile Include="WeatherService.cs" />
     <Compile Include="WeatherStorage.cs" />
     <Compile Include="WeatherAnalytics.cs" />

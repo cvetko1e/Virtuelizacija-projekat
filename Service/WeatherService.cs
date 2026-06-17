@@ -8,6 +8,8 @@ namespace Service
     [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single)]
     public class WeatherService : IWeatherService
     {
+        private static readonly string[] RequiredHeaderFields = { "T", "Tpot", "Tdew", "Sh", "Rh", "Date" };
+
         private string currentSessionId;
         private bool sessionStarted;
         private double? previousSh;
@@ -83,6 +85,8 @@ namespace Service
                 });
             }
 
+            ValidateHeaderFields(meta.HeaderFields);
+
             if (string.IsNullOrWhiteSpace(meta.SourceFile))
             {
                 throw new FaultException<ValidationFault>(new ValidationFault
@@ -124,39 +128,20 @@ namespace Service
             }
 
             // Provera formata podataka — da li je sample uopste validan objekat.
-            if (sample == null)
+            try
             {
-                throw new FaultException<DataFormatFault>(new DataFormatFault
-                {
-                    Message = "Sample objekat je null.",
-                    Field = "sample",
-                    Code = "NULL_OBJECT"
-                });
+                ValidateSampleFormat(sample);
+                ValidateSampleRange(sample);
             }
-
-            // Validacija formata datuma.
-            if (sample.Date == DateTime.MinValue)
+            catch (FaultException<DataFormatFault> ex)
             {
-                throw new FaultException<DataFormatFault>(new DataFormatFault
-                {
-                    Message = "Date nije parsiran ili je prazan.",
-                    Field = "Date",
-                    Code = "INVALID_FORMAT"
-                });
+                storage.WriteReject(sample, ex.Detail.Message);
+                throw;
             }
-
-            // Validacija opsega (business rules) — vraca NACK umesto izuzetka.
-            string validationMessage;
-            string validationField;
-            if (!ValidateSampleRange(sample, out validationMessage, out validationField))
+            catch (FaultException<ValidationFault> ex)
             {
-                storage.WriteReject(sample, validationMessage);
-                return new TransferResponse
-                {
-                    Success = false,
-                    Message = "NACK: " + validationMessage,
-                    Status = TransferStatus.IN_PROGRESS
-                };
+                storage.WriteReject(sample, ex.Detail.Message);
+                throw;
             }
 
             storage.WriteMeasurement(sample);
@@ -246,70 +231,109 @@ namespace Service
             };
         }
 
-        /// <summary>
-        /// Validacija dozvoljenih opsega za svako polje uzorka.
-        /// Vraca false i postavlja poruku/polje ako validacija ne prolazi.
-        /// </summary>
-        private bool ValidateSampleRange(WeatherSample sample, out string message, out string field)
+        private static void ValidateHeaderFields(string[] headerFields)
         {
-            // Sh — specificna vlaznost mora biti > 0 (g/kg).
+            if (headerFields.Length != RequiredHeaderFields.Length)
+            {
+                ThrowValidationFault(
+                    "HeaderFields mora tacno odgovarati meta-zaglavlju {T,Tpot,Tdew,Sh,Rh,Date}.",
+                    "HeaderFields",
+                    "INVALID_HEADER");
+            }
+
+            for (int i = 0; i < RequiredHeaderFields.Length; i++)
+            {
+                if (!string.Equals(headerFields[i], RequiredHeaderFields[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    ThrowValidationFault(
+                        string.Format("HeaderFields[{0}] mora biti {1}.", i, RequiredHeaderFields[i]),
+                        "HeaderFields",
+                        "INVALID_HEADER");
+                }
+            }
+        }
+
+        private static void ValidateSampleFormat(WeatherSample sample)
+        {
+            if (sample == null)
+            {
+                ThrowDataFormatFault("Sample objekat je null.", "sample", "NULL_OBJECT");
+            }
+
+            EnsureFinite(sample.T, "T");
+            EnsureFinite(sample.Tpot, "Tpot");
+            EnsureFinite(sample.Tdew, "Tdew");
+            EnsureFinite(sample.Sh, "Sh");
+            EnsureFinite(sample.Rh, "Rh");
+
+            if (sample.Date == DateTime.MinValue)
+            {
+                ThrowDataFormatFault("Date nije parsiran ili je prazan.", "Date", "INVALID_FORMAT");
+            }
+        }
+
+        private static void EnsureFinite(double value, string field)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                ThrowDataFormatFault(
+                    string.Format("Polje {0} mora biti numericka konacna vrednost.", field),
+                    field,
+                    "INVALID_NUMBER");
+            }
+        }
+
+        private static void ValidateSampleRange(WeatherSample sample)
+        {
             if (sample.Sh <= 0)
             {
-                message = "Sh mora biti > 0.";
-                field = "Sh";
-                return false;
+                ThrowValidationFault("Sh mora biti > 0.", "Sh", "OUT_OF_RANGE");
             }
 
-            // Rh — relativna vlaznost mora biti u opsegu [0, 100] %.
             if (sample.Rh < 0 || sample.Rh > 100)
             {
-                message = "Rh mora biti u opsegu 0-100.";
-                field = "Rh";
-                return false;
+                ThrowValidationFault("Rh mora biti u opsegu 0-100 %.", "Rh", "OUT_OF_RANGE");
             }
 
-            // T — temperatura u Celzijusima, fizicki razuman opseg.
             if (sample.T < -90 || sample.T > 60)
             {
-                message = "T mora biti u opsegu [-90, 60] °C.";
-                field = "T";
-                return false;
+                ThrowValidationFault("T mora biti u opsegu [-90, 60] C.", "T", "OUT_OF_RANGE");
             }
 
-            // Tpot — potencijalna temperatura, prema Kaggle opisu je u Kelvinima (K).
             if (sample.Tpot < 0 || sample.Tpot > 400)
             {
-                message = "Tpot mora biti u razumnom opsegu za Kelvine (npr. [0, 400] K).";
-                field = "Tpot";
-                return false;
+                ThrowValidationFault("Tpot mora biti u razumnom opsegu za Kelvine (npr. [0, 400] K).", "Tpot", "OUT_OF_RANGE");
             }
 
-            // Tdew — temperatura rosne tacke, ne sme premašiti T.
             if (sample.Tdew < -90 || sample.Tdew > 60)
             {
-                message = "Tdew mora biti u opsegu [-90, 60] °C.";
-                field = "Tdew";
-                return false;
+                ThrowValidationFault("Tdew mora biti u opsegu [-90, 60] C.", "Tdew", "OUT_OF_RANGE");
             }
 
             if (sample.Tdew > sample.T)
             {
-                message = "Tdew ne moze biti veci od T (temperatura rosne tacke <= temperatura vazduha).";
-                field = "Tdew";
-                return false;
+                ThrowValidationFault("Tdew ne moze biti veci od T (temperatura rosne tacke <= temperatura vazduha).", "Tdew", "OUT_OF_RANGE");
             }
+        }
 
-            // Datum — ne sme biti podrazumevana (prazna) vrednost.
-            if (sample.Date == DateTime.MinValue)
+        private static void ThrowDataFormatFault(string message, string field, string code)
+        {
+            throw new FaultException<DataFormatFault>(new DataFormatFault
             {
-                message = "Date nije validan.";
-                field = "Date";
-                return false;
-            }
+                Message = message,
+                Field = field,
+                Code = code
+            });
+        }
 
-            message = string.Empty;
-            field = string.Empty;
-            return true;
+        private static void ThrowValidationFault(string message, string field, string code)
+        {
+            throw new FaultException<ValidationFault>(new ValidationFault
+            {
+                Message = message,
+                Field = field,
+                Code = code
+            });
         }
 
         private static double ParseSetting(string key, double fallback)

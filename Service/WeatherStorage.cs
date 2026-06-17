@@ -19,6 +19,8 @@ namespace Service
 
         public void StartSessionFiles(string sessionId)
         {
+            CloseFiles();
+
             string sessionPath = Path.Combine(basePath, sessionId);
             Directory.CreateDirectory(sessionPath);
 

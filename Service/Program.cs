@@ -14,6 +14,22 @@ namespace Service
 
             using (Logger logger = new Logger("Service", logFile))
             {
+                if (HasArgument(args, "--simulate-dispose"))
+                {
+                    string storagePath = System.Configuration.ConfigurationManager.AppSettings["storagePath"] ?? "Measurements";
+                    bool success = ResourceDisposalSimulation.Run(storagePath, logger);
+                    logger.Info(success
+                        ? "Simulacija Dispose pattern-a je uspesna."
+                        : "Simulacija Dispose pattern-a nije uspela.");
+
+                    if (!success)
+                    {
+                        Environment.ExitCode = 1;
+                    }
+
+                    return;
+                }
+
                 logger.Info("Inicijalizacija WeatherService...");
 
                 // Kreiramo singleton instancu servisa rucno
@@ -61,6 +77,19 @@ namespace Service
                     logger.Info("Event handler odjavljen. Kraj rada.");
                 }
             }
+        }
+
+        private static bool HasArgument(string[] args, string expected)
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
