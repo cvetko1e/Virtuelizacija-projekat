@@ -211,6 +211,11 @@ namespace Client
                 throw new FormatException(string.Format("Nevalidan format za Sh: \"{0}\".", parts[3].Trim()));
             }
 
+            if (sh <= 0)
+            {
+                throw new FormatException(string.Format("Sh mora biti > 0, dobijeno: {0}.", sh));
+            }
+
             if (!double.TryParse(parts[4].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out rh))
             {
                 throw new FormatException(string.Format("Nevalidan format za Rh: \"{0}\".", parts[4].Trim()));
